@@ -1,6 +1,6 @@
 # alurianot-dll-licenses
 
-Licenças da `ddraw.dll` do AlurianOT. **Repo privado.**
+Licenças da `ddraw.dll` do AlurianOT. Repo público: só dados públicos (ids, nomes, chaves públicas). A chave mestre fica nos Secrets.
 
 ## Como funciona
 

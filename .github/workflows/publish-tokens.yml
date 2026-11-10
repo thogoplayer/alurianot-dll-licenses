@@ -34,3 +34,24 @@ jobs:
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
           GIST_ID: ${{ vars.TOKEN_GIST_ID }}
         run: python tools/sign_tokens.py --gist "$GIST_ID"
+
+  # GitHub disables scheduled workflows in public repos after 60 days without
+  # commits. One tiny commit on the 1st of each month keeps the signer alive.
+  # (Pushes made with GITHUB_TOKEN never trigger workflows, so no loop.)
+  keepalive:
+    if: github.event_name == 'schedule' && github.event.schedule == '17 3,15 * * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Monthly heartbeat
+        run: |
+          if [ "$(date -u +%d%H)" != "0103" ]; then echo "not the monthly slot"; exit 0; fi
+          date -u +%Y-%m > .keepalive
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .keepalive
+          git commit -m "keepalive $(date -u +%Y-%m)" || exit 0
+          git push
