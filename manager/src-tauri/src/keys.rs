@@ -32,6 +32,7 @@ pub fn generate() -> KeyPair {
     KeyPair { public_hex: public_hex(&secret), pem }
 }
 
+#[allow(dead_code)] // reading existing keys (tests, future import)
 pub fn public_hex_from_pem(pem: &str) -> Result<String, String> {
     let secret = SecretKey::from_pkcs8_pem(pem).map_err(|e| format!("chave inválida: {e}"))?;
     Ok(public_hex(&secret))

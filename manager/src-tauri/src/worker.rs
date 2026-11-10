@@ -24,8 +24,16 @@ pub fn decode_expiry(body: &str) -> Option<i64> {
     i64::try_from(u64::from_le_bytes(bytes)).ok()
 }
 
+/// Runs the blocking request on its own thread: Tauri calls async commands on
+/// a tokio runtime, where reqwest::blocking panics.
 pub fn fetch_status(base: &str, id: u32) -> TokenStatus {
     let url = format!("{}/tokens/{id}.tok", base.trim_end_matches('/'));
+    std::thread::spawn(move || fetch_blocking(&url))
+        .join()
+        .unwrap_or_else(|_| TokenStatus::Unreachable { error: "falha interna".into() })
+}
+
+fn fetch_blocking(url: &str) -> TokenStatus {
     let client = match reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(5))
         .user_agent("alurianot-license-manager")
@@ -34,7 +42,7 @@ pub fn fetch_status(base: &str, id: u32) -> TokenStatus {
         Ok(c) => c,
         Err(e) => return TokenStatus::Unreachable { error: e.to_string() },
     };
-    let resp = match client.get(&url).send() {
+    let resp = match client.get(url).send() {
         Ok(r) => r,
         Err(e) => return TokenStatus::Unreachable { error: e.to_string() },
     };
@@ -78,6 +86,14 @@ mod tests {
         assert_eq!(decode_expiry(""), None);
         assert_eq!(decode_expiry(&token(b"XXXX", 5)), None);
         assert_eq!(decode_expiry("no such licence\n"), None);
+    }
+
+    #[test]
+    fn works_inside_the_tauri_async_runtime() {
+        // Tauri runs `#[command(async)]` handlers on its tokio runtime, where
+        // reqwest::blocking must not be driven directly.
+        let status = tauri::async_runtime::block_on(async { fetch_status("http://127.0.0.1:9", 1) });
+        assert!(matches!(status, TokenStatus::Unreachable { .. }), "{status:?}");
     }
 
     #[test]

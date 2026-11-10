@@ -245,8 +245,9 @@ pub fn prepare_handoff(app: tauri::AppHandle, id: u32) -> Result<String, String>
     let s = current(&app)?;
     let l = find(&read_file(Path::new(&s.repo_dir))?, id)?;
     let out = handoff::prepare(Path::new(&s.keys_dir), &l.name, id, &s.worker_base)?;
-    open_explorer(out.display().to_string());
-    Ok(out.display().to_string())
+    let shown = out.display().to_string().replace('/', "\\");
+    open_explorer(shown.clone());
+    Ok(shown)
 }
 
 #[tauri::command]
