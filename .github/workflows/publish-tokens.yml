@@ -1,0 +1,36 @@
+name: Publish lease tokens
+
+# Re-signs every active licence twice a day (tokens last leaseHours, 48 h by
+# default, so one failed run still leaves a day of margin) and on every change
+# to licenses.json. Nothing is committed: tokens go to the token gist.
+on:
+  push:
+    branches: [main]
+    paths: [licenses.json, tools/**, .github/workflows/publish-tokens.yml]
+  schedule:
+    - cron: "17 3,15 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-tokens
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install --disable-pip-version-check "cryptography==44.0.0"
+      - name: Sign and publish
+        env:
+          DLL_LICENSE_MASTER_KEY: ${{ secrets.DLL_LICENSE_MASTER_KEY }}
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+          GIST_ID: ${{ vars.TOKEN_GIST_ID }}
+        run: python tools/sign_tokens.py --gist "$GIST_ID"

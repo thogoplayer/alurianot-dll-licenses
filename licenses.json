@@ -1,0 +1,21 @@
+{
+  "leaseHours": 48,
+  "licenses": [
+    {
+      "id": 1,
+      "name": "alurianot",
+      "serverPublicKey": "bd5af042deeb3f5028e149b3462d4d9b2393d5e5ff7c809cffe9c6fa3f6d19a87c6fce22f899c65192467c67ed99cc9e4dc3a93350611211153aa6d7bf799406",
+      "revoked": false,
+      "expires": null,
+      "note": "Servidor oficial AlurianOT"
+    },
+    {
+      "id": 2,
+      "name": "tharcio",
+      "serverPublicKey": "f832528781da14339f557b67c9e2ffe94c4b72df3c39da4266fb8592d73a26ce122869342eada05856ad2e523727afa846643ba0f3ef0f9a2e43a46290f0b40b",
+      "revoked": false,
+      "expires": null,
+      "note": "Servidor de teste do Tharcio"
+    }
+  ]
+}
