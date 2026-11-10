@@ -55,7 +55,7 @@ entregar o token e o servidor dele para em até `leaseHours`.
 cd worker
 npx wrangler@3.114.0 login
 npx wrangler@3.114.0 deploy
-npx wrangler@3.114.0 secret put MASTER_KEY < C:	mp\licenses\master.key
+npx wrangler@3.114.0 secret put MASTER_KEY < C:/tmp/licenses/master.key
 ```
 Plano grátis do Cloudflare: 100 mil pedidos/dia (cada servidor faz 24/dia).
 
