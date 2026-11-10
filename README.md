@@ -70,3 +70,25 @@ DLLs com uma chave nova. Vazar a chave mestre = qualquer um emite licenças.
 ```
 python tools/sign_tokens.py --master-key C:\tmp\licenses\master.key --out C:\tmp\licenses\tokens
 ```
+
+## App de licenças (manager/)
+
+App de desktop (Tauri) que faz tudo isso com cliques: lista as licenças,
+cria (gera a chave do servidor, escolhe o próximo id, atualiza
+`licenses.json`, faz commit e push), revoga/reativa, apaga, mostra as linhas
+do `config.lua`, prepara a pasta de envio (`dll_license.key` + `LEIA-ME.txt`)
+e pergunta ao Worker até quando o token vale.
+
+- Rodar: `manager\src-tauri\target\release\alurianot-license-manager.exe`
+  (ou instalar com o `.exe` em `target\release\bundle\nsis\`).
+- Padrões (botão Configurações): repo `Documentos\GitHub\alurianot-dll-licenses`,
+  chaves `C:\tmp\licenses`, Worker `alurianot-dll-licenses...workers.dev`.
+- Usa o git já logado no PC; commita **só** `licenses.json`. Se o push
+  falhar, a mudança fica salva no PC e aparece "Tentar enviar de novo".
+- Ids nunca são reutilizados (`retiredIds`): a DLL de um comprador é
+  compilada para um id fixo.
+- Apagar não destrói a chave: ela vai para `C:\tmp\licenses\deleted\`.
+- Nunca lê nem usa a chave mestra.
+
+Desenvolvimento: `cd manager && npm install && npm run tauri dev`;
+testes: `cargo test --manifest-path manager/src-tauri/Cargo.toml`.
