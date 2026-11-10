@@ -1,0 +1,7 @@
+name = "alurianot-dll-licenses"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+# Secret (not in this file): MASTER_KEY = contents of master.key (PKCS#8 PEM)
+#   npx wrangler@3.114.0 secret put MASTER_KEY < C:\tmp\licenses\master.key
