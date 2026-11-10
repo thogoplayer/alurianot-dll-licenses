@@ -1,6 +1,7 @@
 // Release builds: no console window.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod keys;
 mod licenses;
 
 fn main() {
