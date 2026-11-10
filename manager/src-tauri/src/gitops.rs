@@ -18,8 +18,23 @@ fn run_git(repo: &Path, args: &[&str]) -> Result<String, String> {
 }
 
 /// Brings in remote changes first; other local edits are stashed and restored.
+/// A rebase that stops on a conflict is aborted so the working copy is left
+/// exactly as it was.
 pub fn pull(repo: &Path) -> Result<(), String> {
-    run_git(repo, &["pull", "--rebase", "--autostash"]).map(|_| ())
+    match run_git(repo, &["pull", "--rebase", "--autostash"]) {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            let git_dir = repo.join(".git");
+            if git_dir.join("rebase-merge").exists() || git_dir.join("rebase-apply").exists() {
+                let _ = run_git(repo, &["rebase", "--abort"]);
+                return Err(format!(
+                    "{e}\n\nO licenses.json mudou no GitHub e conflita com uma alteração local \
+                     ainda não enviada. Nada foi alterado; resolva o conflito no repositório."
+                ));
+            }
+            Err(e)
+        }
+    }
 }
 
 /// Commits licenses.json only, whatever else is staged in the repo.
@@ -31,6 +46,20 @@ pub fn push(repo: &Path) -> Result<(), String> {
     run_git(repo, &["push"]).map(|_| ())
 }
 
+/// The Worker reads `main`: refuse to commit or push anywhere else.
+pub fn check_branch(repo: &Path) -> Result<(), String> {
+    let branch = run_git(repo, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+    if branch != "main" {
+        return Err(format!(
+            "O repositório de licenças está no branch {branch}, não no main. \
+             Faça checkout do main antes de alterar licenças."
+        ));
+    }
+    run_git(repo, &["rev-parse", "--abbrev-ref", "main@{u}"])
+        .map(|_| ())
+        .map_err(|_| "O branch main não tem um remoto (upstream) configurado.".to_string())
+}
+
 /// Local commits not on the remote yet (0 when in sync).
 pub fn ahead_count(repo: &Path) -> Result<u32, String> {
     let n = run_git(repo, &["rev-list", "--count", "@{u}..HEAD"])?;
@@ -40,6 +69,8 @@ pub fn ahead_count(repo: &Path) -> Result<u32, String> {
 fn git(repo: &Path, args: &[&str]) -> Command {
     let mut cmd = Command::new("git");
     cmd.current_dir(repo).args(args);
+    // Never wait for a username/password prompt nobody can see.
+    cmd.env("GIT_TERMINAL_PROMPT", "0");
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -110,6 +141,56 @@ mod tests {
         std::fs::write(clone.join("other.txt"), "dirty\n").unwrap();
         pull(&clone).unwrap();
         assert_eq!(std::fs::read_to_string(clone.join("other.txt")).unwrap(), "dirty\n");
+    }
+
+    fn second_clone(tmp: &Path) -> PathBuf {
+        let other = tmp.join("other");
+        run(tmp, &["clone", "-q", tmp.join("remote.git").to_str().unwrap(), other.to_str().unwrap()]);
+        run(&other, &["config", "user.email", "o@o"]);
+        run(&other, &["config", "user.name", "o"]);
+        other
+    }
+
+    #[test]
+    fn pull_conflict_is_aborted() {
+        let (tmp, clone) = setup();
+        let other = second_clone(tmp.path());
+        std::fs::write(other.join("licenses.json"), "{\"remote\":1}\n").unwrap();
+        run(&other, &["commit", "-q", "-am", "remote edit"]);
+        run(&other, &["push", "-q"]);
+        std::fs::write(clone.join("licenses.json"), "{\"local\":1}\n").unwrap();
+        commit_licenses(&clone, "local edit").unwrap();
+        let head = run(&clone, &["rev-parse", "HEAD"]);
+
+        let err = pull(&clone).unwrap_err();
+        assert!(err.contains("git pull"), "{err}");
+        assert_eq!(run(&clone, &["rev-parse", "HEAD"]), head);
+        // Same content; core.autocrlf may rewrite the line ending on abort.
+        assert_eq!(
+            std::fs::read_to_string(clone.join("licenses.json")).unwrap().replace("\r\n", "\n"),
+            "{\"local\":1}\n"
+        );
+        assert!(!clone.join(".git/rebase-merge").exists());
+        assert!(!clone.join(".git/rebase-apply").exists());
+    }
+
+    #[test]
+    fn git_never_prompts() {
+        let (_tmp, clone) = setup();
+        let out = run(&clone, &["-c", "alias.envtest=!echo \"$GIT_TERMINAL_PROMPT\"", "envtest"]);
+        assert_eq!(out, "0");
+    }
+
+    #[test]
+    fn check_branch_requires_main_with_upstream() {
+        let (_tmp, clone) = setup();
+        check_branch(&clone).unwrap();
+        run(&clone, &["checkout", "-q", "-b", "feature"]);
+        let err = check_branch(&clone).unwrap_err();
+        assert!(err.contains("main"), "{err}");
+        run(&clone, &["checkout", "-q", "main"]);
+        run(&clone, &["branch", "--unset-upstream"]);
+        assert!(check_branch(&clone).is_err());
     }
 
     #[test]

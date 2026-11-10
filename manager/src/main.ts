@@ -57,17 +57,22 @@ function errorText(e: unknown): string {
   return typeof e === "string" ? e : e instanceof Error ? e.message : JSON.stringify(e);
 }
 
+let lastPushFailed = false;
 async function refreshBanner() {
   try {
-    banner.classList.toggle("hidden", !(await api.pendingPush()));
+    banner.classList.toggle("hidden", !(lastPushFailed || (await api.pendingPush())));
   } catch {
-    banner.classList.add("hidden");
+    banner.classList.toggle("hidden", !lastPushFailed);
   }
 }
 
 function report(result: OpResult) {
-  if (result.pushed) showToast(result.message);
-  else showToast(`Salvo no PC, mas não enviado ao GitHub: ${result.message}`, "error");
+  if (result.pushed) {
+    showToast(result.message);
+  } else {
+    showToast(`Salvo no PC, mas não enviado ao GitHub: ${result.message}`, "error");
+    banner.classList.remove("hidden");
+  }
 }
 
 /** Runs one change at a time, then reloads the list. */
@@ -76,7 +81,9 @@ async function run(action: () => Promise<OpResult>) {
   busy = true;
   document.body.classList.add("busy");
   try {
-    report(await action());
+    const result = await action();
+    lastPushFailed = !result.pushed;
+    report(result);
   } catch (e) {
     showToast(errorText(e), "error");
   } finally {

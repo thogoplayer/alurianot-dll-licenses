@@ -93,6 +93,7 @@ pub fn modify(
     repo: &Path,
     edit: impl FnOnce(&mut LicenseFile) -> Result<String, String>,
 ) -> Result<OpResult, String> {
+    gitops::check_branch(repo)?;
     gitops::pull(repo)?;
     let mut file = read_file(repo)?;
     let message = edit(&mut file)?;
@@ -102,6 +103,16 @@ pub fn modify(
     gitops::commit_licenses(repo, &message)?;
     Ok(match gitops::push(repo) {
         Ok(()) => OpResult { pushed: true, message: format!("{message} — enviado ao GitHub.") },
+        Err(e) => OpResult { pushed: false, message: e },
+    })
+}
+
+/// "Tentar enviar de novo": bring in remote changes first, then push.
+pub fn retry(repo: &Path) -> Result<OpResult, String> {
+    gitops::check_branch(repo)?;
+    gitops::pull(repo)?;
+    Ok(match gitops::push(repo) {
+        Ok(()) => OpResult { pushed: true, message: "Alterações enviadas ao GitHub.".into() },
         Err(e) => OpResult { pushed: false, message: e },
     })
 }
@@ -222,11 +233,7 @@ pub fn delete_license(app: tauri::AppHandle, id: u32) -> Result<OpResult, String
 
 #[tauri::command(async)]
 pub fn retry_push(app: tauri::AppHandle) -> Result<OpResult, String> {
-    let s = current(&app)?;
-    Ok(match gitops::push(Path::new(&s.repo_dir)) {
-        Ok(()) => OpResult { pushed: true, message: "Alterações enviadas ao GitHub.".into() },
-        Err(e) => OpResult { pushed: false, message: e },
-    })
+    retry(Path::new(&current(&app)?.repo_dir))
 }
 
 #[tauri::command(async)]
@@ -329,6 +336,42 @@ mod tests {
         run(&clone, &["commit", "-q", "-m", "init"]);
         run(&clone, &["push", "-q", "-u", "origin", "main"]);
         (tmp, clone)
+    }
+
+    #[test]
+    fn retry_pulls_before_pushing() {
+        let (tmp, clone) = repo_with(&licenses::to_json(&base_file()));
+        // Remote moves on (another PC) while a local licence commit is pending.
+        let other = tmp.path().join("other");
+        run(tmp.path(), &["clone", "-q", tmp.path().join("remote.git").to_str().unwrap(), other.to_str().unwrap()]);
+        run(&other, &["config", "user.email", "o@o"]);
+        run(&other, &["config", "user.name", "o"]);
+        std::fs::write(other.join("README.md"), "x\n").unwrap();
+        run(&other, &["add", "README.md"]);
+        run(&other, &["commit", "-q", "-m", "readme"]);
+        run(&other, &["push", "-q"]);
+        let mut f = base_file();
+        f.licenses[0].note = "pendente".into();
+        std::fs::write(clone.join("licenses.json"), licenses::to_json(&f)).unwrap();
+        gitops::commit_licenses(&clone, "nota").unwrap();
+
+        let r = retry(&clone).unwrap();
+        assert!(r.pushed, "{r:?}");
+        assert_eq!(gitops::ahead_count(&clone).unwrap(), 0);
+    }
+
+    #[test]
+    fn modify_refuses_other_branch() {
+        let (_tmp, clone) = repo_with(&licenses::to_json(&base_file()));
+        run(&clone, &["checkout", "-q", "-b", "feature"]);
+        let err = modify(&clone, |f| {
+            f.licenses[0].revoked = true;
+            Ok("revogar".into())
+        })
+        .unwrap_err();
+        assert!(err.contains("main"), "{err}");
+        assert!(!licenses::parse(&std::fs::read_to_string(clone.join("licenses.json")).unwrap()).unwrap().licenses[0].revoked);
+        assert!(retry(&clone).is_err());
     }
 
     #[test]

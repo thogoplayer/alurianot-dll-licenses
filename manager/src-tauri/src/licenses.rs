@@ -4,7 +4,7 @@ use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct License {
     pub id: u32,
     pub name: String,
@@ -16,7 +16,7 @@ pub struct License {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LicenseFile {
     pub lease_hours: u32,
     pub licenses: Vec<License>,
@@ -177,6 +177,14 @@ mod tests {
         assert!(parse(&to_json_unchecked(&f)).is_err());
         f.licenses[1].expires = Some("2026-12-01".into());
         assert!(parse(&to_json_unchecked(&f)).is_ok());
+    }
+
+    #[test]
+    fn parse_rejects_unknown_fields() {
+        // A typo like "expire" must not be accepted and then silently dropped.
+        let err = parse(&sample(KEY).replace("\"expires\": null", "\"expires\": null,\n      \"expire\": \"2026-12-31\"")).unwrap_err();
+        assert!(err.contains("expire"), "{err}");
+        assert!(parse(&sample(KEY).replace("\"leaseHours\"", "\"leaseHour\": 1,\n  \"leaseHours\"")).is_err());
     }
 
     #[test]
