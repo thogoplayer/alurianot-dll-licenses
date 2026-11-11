@@ -222,6 +222,32 @@ pub fn from_config(config: &str) -> Profile {
     p
 }
 
+/// A new buyer starts from the owner's compatibility flags but with every
+/// identity field empty, so nothing of the official server (name, login
+/// folder, Discord app, URLs, IP) leaks into a buyer's DLL by accident.
+pub fn for_new_buyer(config: &str) -> Profile {
+    let mut p = from_config(config);
+    for field in [
+        &mut p.server_host,
+        &mut p.server_name,
+        &mut p.login_store_dir,
+        &mut p.website_url,
+        &mut p.discord_url,
+        &mut p.forgot_password_url,
+        &mut p.create_account_url,
+        &mut p.store_image_url,
+        &mut p.updater_url,
+        &mut p.discord_app_id,
+        &mut p.discord_small_image,
+        &mut p.discord_small_image_text,
+        &mut p.discord_button1_url,
+        &mut p.discord_button2_url,
+    ] {
+        field.clear();
+    }
+    p
+}
+
 pub fn path(keys_dir: &Path, name: &str, id: u32) -> PathBuf {
     keys_dir.join("profiles").join(format!("{name}-{id}.json"))
 }
@@ -259,6 +285,24 @@ mod tests {
         assert!(p.compat.mount_system && p.compat.health_u32 && p.compat.extended);
         assert!(!p.compat.alpha);
         assert_eq!(p.compat.outfit_limit, 255);
+    }
+
+    #[test]
+    fn new_buyer_does_not_inherit_owner_identity() {
+        let p = for_new_buyer(FIXTURE);
+        for (field, value) in [
+            ("server_host", &p.server_host),
+            ("server_name", &p.server_name),
+            ("login_store_dir", &p.login_store_dir),
+            ("discord_app_id", &p.discord_app_id),
+            ("store_image_url", &p.store_image_url),
+            ("updater_url", &p.updater_url),
+            ("discord_button1_url", &p.discord_button1_url),
+        ] {
+            assert!(value.is_empty(), "{field} = {value}");
+        }
+        assert_eq!(p.discord_large_image, "logo");
+        assert_eq!(p.compat, from_config(FIXTURE).compat);
     }
 
     #[test]

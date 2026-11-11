@@ -15,12 +15,26 @@ pub struct BuildReport {
     pub log_tail: String,
 }
 
-/// C string literal body: escapes `\` and `"`; control characters refused.
+/// C string literal body for the 8.60 client, whose fonts are Latin-1:
+/// `\` and `"` escaped, non-ASCII Latin-1 as 3-digit octal (`\347`; octal
+/// never swallows the digits that follow, unlike `\x`). Control characters
+/// and anything outside Latin-1 are refused.
 pub fn c_string(value: &str) -> Result<String, String> {
-    if value.chars().any(|c| c.is_control()) {
-        return Err(format!("Valor com quebra de linha ou caractere de controle: {value:?}"));
+    let mut out = String::with_capacity(value.len());
+    for c in value.chars() {
+        let code = c as u32;
+        if c.is_control() {
+            return Err(format!("Valor com quebra de linha ou caractere de controle: {value:?}"));
+        }
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            _ if code < 0x80 => out.push(c),
+            _ if code <= 0xFF => out.push_str(&format!("\\{code:03o}")),
+            _ => return Err(format!("O caractere '{c}' não existe na fonte do Tibia: {value:?}")),
+        }
     }
-    Ok(value.replace('\\', "\\\\").replace('"', "\\\""))
+    Ok(out)
 }
 
 /// config.h for a buyer build: an override block of `#define`s right after
@@ -339,6 +353,14 @@ mod tests {
         assert!(out.contains(r#"#define TIBIA_SERVER_DISPLAY_NAME "Fulano \"OT\" \\ x""#));
         p.server_name = "linha\nnova".into();
         assert!(patch_config(FIXTURE, &p, 7, &[0; 64]).is_err());
+    }
+
+    #[test]
+    fn c_string_emits_latin1_octal() {
+        // The 8.60 client fonts are Latin-1: "Ação" must reach it as E7/E3.
+        assert_eq!(c_string("Ação 1").unwrap(), "A\\347\\343o 1");
+        assert_eq!(c_string("é9").unwrap(), "\\3519");
+        assert!(c_string("日本").is_err());
     }
 
     #[test]

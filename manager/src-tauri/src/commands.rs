@@ -336,7 +336,7 @@ pub fn get_profile(app: tauri::AppHandle, id: u32) -> Result<profile::Profile, S
     let config = Path::new(&s.client_dir).join("dll").join("src").join("config.h");
     let text = std::fs::read_to_string(&config)
         .map_err(|e| format!("não foi possível ler {}: {e}", config.display()))?;
-    Ok(profile::from_config(&text))
+    Ok(profile::for_new_buyer(&text))
 }
 
 #[tauri::command]
@@ -350,6 +350,12 @@ pub fn build_dll(app: tauri::AppHandle, id: u32) -> Result<build::BuildReport, S
     let (s, l) = licence(&app, id)?;
     let keys_dir = PathBuf::from(&s.keys_dir);
     let p = profile::load(&keys_dir, &l.name, id).ok_or("Salve o perfil do comprador antes de gerar a DLL.")?;
+    if p.server_host.trim().is_empty() || p.server_name.trim().is_empty() || p.login_store_dir.trim().is_empty() {
+        return Err("Preencha pelo menos IP/domínio, nome do servidor e pasta do login.".into());
+    }
+    if !p.updater_url.is_empty() && !p.updater_url.ends_with('/') {
+        return Err("O link do auto updater precisa terminar com /".into());
+    }
     let report = build::build(&build::BuildInput {
         client_dir: Path::new(&s.client_dir),
         msbuild: Path::new(&s.msbuild_path),
