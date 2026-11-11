@@ -18,6 +18,7 @@ pub struct LicenseView {
     pub expires: Option<String>,
     pub note: String,
     pub has_key: bool,
+    pub features: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -59,6 +60,40 @@ pub fn apply_create(
         features: vec![],
     });
     Ok(())
+}
+
+/// Sets the licence's features: validated, deduplicated, in FEATURES order.
+pub fn apply_features(file: &mut LicenseFile, id: u32, features: &[String]) -> Result<String, String> {
+    licenses::feature_mask(features)?;
+    let ordered: Vec<String> = licenses::FEATURES
+        .iter()
+        .filter(|f| features.iter().any(|x| x == *f))
+        .map(|f| f.to_string())
+        .collect();
+    let l = file
+        .licenses
+        .iter_mut()
+        .find(|l| l.id == id)
+        .ok_or_else(|| format!("Licença #{id} não encontrada."))?;
+    l.features = ordered;
+    Ok(format!("recursos: {} (#{id})", l.name))
+}
+
+/// New expiry date (inclusive, AAAA-MM-DD) or none.
+pub fn apply_expires(file: &mut LicenseFile, id: u32, expires: Option<String>) -> Result<String, String> {
+    let expires = expires.map(|e| e.trim().to_string()).filter(|e| !e.is_empty());
+    if let Some(e) = &expires {
+        if licenses::parse_date(e).is_none() {
+            return Err(format!("Data inválida: {e} (use AAAA-MM-DD)."));
+        }
+    }
+    let l = file
+        .licenses
+        .iter_mut()
+        .find(|l| l.id == id)
+        .ok_or_else(|| format!("Licença #{id} não encontrada."))?;
+    l.expires = expires;
+    Ok(format!("validade: {} (#{id})", l.name))
 }
 
 pub fn apply_delete(file: &mut LicenseFile, id: u32) -> Result<License, String> {
@@ -172,6 +207,7 @@ pub fn list_licenses(app: tauri::AppHandle) -> Result<Vec<LicenseView>, String> 
             expires: l.expires.clone(),
             note: l.note.clone(),
             has_key: keys::key_path(&keys_dir, &l.name, l.id).is_file(),
+            features: l.features.clone(),
         })
         .collect())
 }
@@ -187,6 +223,7 @@ pub fn create_license(
     name: String,
     expires: Option<String>,
     note: String,
+    features: Vec<String>,
 ) -> Result<OpResult, String> {
     let s = current(&app)?;
     let name = licenses::normalize_name(&name)?;
@@ -199,6 +236,7 @@ pub fn create_license(
         let pair = keys::generate();
         keys::save(&keys_dir, &name, id, &pair)?;
         apply_create(file, &name, id, &pair.public_hex, expires, &note)?;
+        apply_features(file, id, &features)?;
         Ok(format!("licença nova: {name} (#{id})"))
     })
 }
@@ -216,6 +254,18 @@ pub fn set_revoked(app: tauri::AppHandle, id: u32, revoked: bool) -> Result<OpRe
         let verb = if revoked { "revogar" } else { "reativar" };
         Ok(format!("{verb}: {} (#{id})", l.name))
     })
+}
+
+#[tauri::command(async)]
+pub fn set_features(app: tauri::AppHandle, id: u32, features: Vec<String>) -> Result<OpResult, String> {
+    let s = current(&app)?;
+    modify(Path::new(&s.repo_dir), |file| apply_features(file, id, &features))
+}
+
+#[tauri::command(async)]
+pub fn set_expires(app: tauri::AppHandle, id: u32, expires: Option<String>) -> Result<OpResult, String> {
+    let s = current(&app)?;
+    modify(Path::new(&s.repo_dir), |file| apply_expires(file, id, expires))
 }
 
 #[tauri::command(async)]
@@ -307,6 +357,32 @@ mod tests {
         assert!(apply_create(&mut f, "fulano", 4, KEY, None, "").is_err());
         assert!(apply_create(&mut f, "outro", 5, KEY, Some("31/01/2027".into()), "").is_err());
         assert!(licenses::parse(&licenses::to_json(&f)).is_ok());
+    }
+
+    #[test]
+    fn apply_features_validates_orders_and_dedups() {
+        let mut f = base_file();
+        let msg = apply_features(&mut f, 1, &["mount".into(), "store".into(), "mount".into()]).unwrap();
+        assert_eq!(msg, "recursos: alurianot (#1)");
+        assert_eq!(f.licenses[0].features, vec!["store".to_string(), "mount".to_string()]);
+        assert!(apply_features(&mut f, 1, &["xyz".into()]).unwrap_err().contains("xyz"));
+        assert!(apply_features(&mut f, 9, &[]).is_err());
+        apply_features(&mut f, 1, &[]).unwrap();
+        assert!(f.licenses[0].features.is_empty());
+    }
+
+    #[test]
+    fn apply_expires_sets_and_clears() {
+        let mut f = base_file();
+        let msg = apply_expires(&mut f, 1, Some("2027-05-31".into())).unwrap();
+        assert_eq!(msg, "validade: alurianot (#1)");
+        assert_eq!(f.licenses[0].expires.as_deref(), Some("2027-05-31"));
+        assert!(apply_expires(&mut f, 1, Some("31/05/2027".into())).is_err());
+        assert_eq!(f.licenses[0].expires.as_deref(), Some("2027-05-31"));
+        apply_expires(&mut f, 1, None).unwrap();
+        assert_eq!(f.licenses[0].expires, None);
+        apply_expires(&mut f, 1, Some("  ".into())).unwrap();
+        assert_eq!(f.licenses[0].expires, None);
     }
 
     #[test]

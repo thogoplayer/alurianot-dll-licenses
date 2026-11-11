@@ -14,6 +14,7 @@ export interface LicenseView {
   expires: string | null;
   note: string;
   hasKey: boolean;
+  features: string[];
 }
 
 export interface OpResult {
@@ -27,13 +28,35 @@ export type TokenStatus =
   | { kind: "invalid" }
   | { kind: "unreachable"; error: string };
 
+// Sellable DLL features (append-only, same order as licenses.rs FEATURES).
+export const FEATURES: { id: string; label: string }[] = [
+  { id: "store", label: "Store" },
+  { id: "market", label: "Market" },
+  { id: "forge", label: "Forge + tiers" },
+  { id: "supply_stash", label: "Supply Stash" },
+  { id: "task_hunt", label: "Task Hunt" },
+  { id: "daily_reward", label: "Daily Reward" },
+  { id: "hunting", label: "Hunting" },
+  { id: "creature_icons", label: "Ícones de criatura" },
+  { id: "guild_emblems", label: "Emblemas de guild" },
+  { id: "skills", label: "Skills (ícones, linhas, XP Boost)" },
+  { id: "side_columns", label: "Colunas laterais" },
+  { id: "store_inbox_purse", label: "Bolsa da Store" },
+  { id: "login_screen", label: "Tela de login" },
+  { id: "discord_rpc", label: "Discord RPC" },
+  { id: "mount", label: "Montaria (brinde)" },
+  { id: "auto_updater", label: "Auto Updater" },
+];
+
 export const api = {
   getSettings: () => invoke<Settings>("get_settings"),
   saveSettings: (settings: Settings) => invoke<void>("save_settings", { settings }),
   listLicenses: () => invoke<LicenseView[]>("list_licenses"),
   pullLatest: () => invoke<void>("pull_latest"),
-  createLicense: (name: string, expires: string | null, note: string) =>
-    invoke<OpResult>("create_license", { name, expires, note }),
+  createLicense: (name: string, expires: string | null, note: string, features: string[]) =>
+    invoke<OpResult>("create_license", { name, expires, note, features }),
+  setFeatures: (id: number, features: string[]) => invoke<OpResult>("set_features", { id, features }),
+  setExpires: (id: number, expires: string | null) => invoke<OpResult>("set_expires", { id, expires }),
   setRevoked: (id: number, revoked: boolean) => invoke<OpResult>("set_revoked", { id, revoked }),
   deleteLicense: (id: number) => invoke<OpResult>("delete_license", { id }),
   retryPush: () => invoke<OpResult>("retry_push"),

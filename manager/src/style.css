@@ -104,4 +104,12 @@ td.error-cell { color: #ffb4b1; }
 .toast.ok { border-color: #2f6b42; }
 .toast.error { border-color: #7a3030; color: #ffc9c7; }
 
+fieldset.features { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; margin: 0 0 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; }
+fieldset.features legend { color: var(--muted); font-size: 12px; padding: 0 4px; }
+.dialog label.check { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--text); font-size: 13px; }
+.dialog label.check input { display: inline; width: auto; margin: 0; }
+.feature-tools { display: flex; gap: 6px; margin: -4px 0 10px; }
+.feature-tools button { padding: 3px 9px; font-size: 12px; }
+td.features { color: var(--muted); font-variant-numeric: tabular-nums; cursor: help; }
+
 .hidden { display: none !important; }

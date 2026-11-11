@@ -1,4 +1,4 @@
-import { api, LicenseView, OpResult, Settings, TokenStatus } from "./api";
+import { api, FEATURES, LicenseView, OpResult, Settings, TokenStatus } from "./api";
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 
@@ -18,9 +18,9 @@ app.innerHTML = `
   <main>
     <table>
       <thead>
-        <tr><th>Id</th><th>Nome</th><th>Status</th><th>Validade</th><th>Nota</th><th>Token</th><th>Ações</th></tr>
+        <tr><th>Id</th><th>Nome</th><th>Status</th><th>Validade</th><th>Recursos</th><th>Nota</th><th>Token</th><th>Ações</th></tr>
       </thead>
-      <tbody id="rows"><tr><td colspan="7" class="muted">Carregando...</td></tr></tbody>
+      <tbody id="rows"><tr><td colspan="8" class="muted">Carregando...</td></tr></tbody>
     </table>
   </main>
   <div id="modal" class="modal hidden"><div class="dialog" id="dialog"></div></div>
@@ -111,7 +111,7 @@ function tokenText(s: TokenStatus): string {
 
 function render(list: LicenseView[]) {
   if (list.length === 0) {
-    rows.innerHTML = `<tr><td colspan="7" class="muted">Nenhuma licença.</td></tr>`;
+    rows.innerHTML = `<tr><td colspan="8" class="muted">Nenhuma licença.</td></tr>`;
     return;
   }
   rows.innerHTML = list
@@ -122,10 +122,12 @@ function render(list: LicenseView[]) {
       <td class="name">${esc(l.name)}</td>
       <td><span class="badge ${l.status}">${l.status}</span></td>
       <td>${brDate(l.expires)}</td>
+      <td class="features" title="${esc(featureLabels(l.features))}">${l.features.length}/${FEATURES.length}</td>
       <td class="note">${esc(l.note)}</td>
       <td class="token"><button class="small" data-act="token">Verificar</button></td>
       <td class="row-actions">
         <button class="small" data-act="${l.status === "revogada" ? "reactivate" : "revoke"}">${l.status === "revogada" ? "Reativar" : "Revogar"}</button>
+        <button class="small" data-act="edit">Editar</button>
         <button class="small" data-act="config">Config</button>
         <button class="small" data-act="send" ${l.hasKey ? "" : 'disabled title="A chave desta licença não está neste PC."'}>Enviar</button>
         <button class="small danger" data-act="delete">Apagar</button>
@@ -142,7 +144,7 @@ async function load() {
   try {
     render(await api.listLicenses());
   } catch (e) {
-    rows.innerHTML = `<tr><td colspan="7" class="error-cell">${esc(errorText(e))}</td></tr>`;
+    rows.innerHTML = `<tr><td colspan="8" class="error-cell">${esc(errorText(e))}</td></tr>`;
   }
   await refreshBanner();
 }
@@ -165,6 +167,62 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !modal.classList.contains("hidden")) closeModal();
 });
 
+function featureLabels(ids: string[]): string {
+  return FEATURES.filter((f) => ids.includes(f.id)).map((f) => f.label).join(", ") || "nenhum recurso";
+}
+
+function featureChecks(selected: string[]): string {
+  return FEATURES.map(
+    (f) => `<label class="check"><input type="checkbox" name="feature" value="${f.id}" ${selected.includes(f.id) ? "checked" : ""} /> ${esc(f.label)}</label>`,
+  ).join("");
+}
+
+function checkedFeatures(form: HTMLFormElement): string[] {
+  return [...form.querySelectorAll<HTMLInputElement>('input[name="feature"]:checked')].map((i) => i.value);
+}
+
+function editDialog(l: LicenseView) {
+  openModal(`
+    <h2>Editar — ${esc(l.name)} (#${l.id})</h2>
+    <form id="form-edit">
+      <fieldset class="features"><legend>Recursos</legend>${featureChecks(l.features)}</fieldset>
+      <div class="feature-tools">
+        <button type="button" data-all>Marcar todos</button>
+        <button type="button" data-none>Desmarcar todos</button>
+      </div>
+      <label>Validade <small>(vence depois deste dia; vazio = sem validade)</small>
+        <input name="expires" type="date" value="${l.expires ?? ""}" /></label>
+      <p class="muted">Recursos ligam/desligam na próxima vez que o cliente da pessoa abrir.</p>
+      <div class="dialog-actions">
+        <button type="button" data-close>Cancelar</button>
+        <button type="submit" class="primary">Salvar</button>
+      </div>
+    </form>`);
+  const form = dialog.querySelector<HTMLFormElement>("#form-edit")!;
+  form.querySelector("[data-all]")!.addEventListener("click", () =>
+    form.querySelectorAll<HTMLInputElement>('input[name="feature"]').forEach((i) => (i.checked = true)));
+  form.querySelector("[data-none]")!.addEventListener("click", () =>
+    form.querySelectorAll<HTMLInputElement>('input[name="feature"]').forEach((i) => (i.checked = false)));
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const features = checkedFeatures(form);
+    const expires = String(new FormData(form).get("expires") ?? "") || null;
+    const featuresChanged = features.join(",") !== l.features.join(",");
+    const expiresChanged = expires !== l.expires;
+    closeModal();
+    if (!featuresChanged && !expiresChanged) {
+      showToast("Nada mudou.");
+      return;
+    }
+    run(async () => {
+      let result: OpResult = { pushed: true, message: "" };
+      if (featuresChanged) result = await api.setFeatures(l.id, features);
+      if (expiresChanged && result.pushed) result = await api.setExpires(l.id, expires);
+      return result;
+    });
+  });
+}
+
 function newLicenseDialog() {
   openModal(`
     <h2>Nova licença</h2>
@@ -172,6 +230,7 @@ function newLicenseDialog() {
       <label>Nome <small>(letras sem acento, números, - e _)</small><input name="name" required maxlength="32" placeholder="ex.: fulano" /></label>
       <label>Validade <small>(opcional — vence depois deste dia)</small><input name="expires" type="date" /></label>
       <label>Nota <small>(opcional)</small><input name="note" maxlength="120" placeholder="ex.: servidor de teste do fulano" /></label>
+      <fieldset class="features"><legend>Recursos</legend>${featureChecks(["mount"])}</fieldset>
       <div class="dialog-actions">
         <button type="button" data-close>Cancelar</button>
         <button type="submit" class="primary">Criar licença</button>
@@ -183,8 +242,9 @@ function newLicenseDialog() {
     const name = String(data.get("name") ?? "");
     const expires = String(data.get("expires") ?? "") || null;
     const note = String(data.get("note") ?? "");
+    const features = checkedFeatures(e.target as HTMLFormElement);
     closeModal();
-    run(() => api.createLicense(name, expires, note));
+    run(() => api.createLicense(name, expires, note, features));
   });
 }
 
@@ -283,6 +343,9 @@ rows.addEventListener("click", async (e) => {
       break;
     case "reactivate":
       run(() => api.setRevoked(id, false));
+      break;
+    case "edit":
+      editDialog(l);
       break;
     case "config":
       configDialog(l);

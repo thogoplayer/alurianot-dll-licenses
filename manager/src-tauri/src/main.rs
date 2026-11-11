@@ -18,6 +18,8 @@ fn main() {
             commands::pull_latest,
             commands::create_license,
             commands::set_revoked,
+            commands::set_features,
+            commands::set_expires,
             commands::delete_license,
             commands::retry_push,
             commands::pending_push,
