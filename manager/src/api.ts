@@ -5,6 +5,55 @@ export interface Settings {
   repoDir: string;
   keysDir: string;
   workerBase: string;
+  clientDir: string;
+  msbuildPath: string;
+}
+
+export interface Compat {
+  mountSystem: boolean;
+  healthU32: boolean;
+  manaU32: boolean;
+  effectsU16: boolean;
+  shootsU16: boolean;
+  outfitCountU16: boolean;
+  outfitLimit: number;
+  extended: boolean;
+  frameGroups: boolean;
+  datFrameGroups: boolean;
+  improvedAnimations: boolean;
+  datImprovedAnimations: boolean;
+  customPing: boolean;
+  customClientOs: boolean;
+  multiClient: boolean;
+  hiresTimer: boolean;
+  alpha: boolean;
+  manabar: boolean;
+}
+
+export interface Profile {
+  serverHost: string;
+  serverName: string;
+  loginStoreDir: string;
+  websiteUrl: string;
+  discordUrl: string;
+  forgotPasswordUrl: string;
+  createAccountUrl: string;
+  storeImageUrl: string;
+  updaterUrl: string;
+  discordAppId: string;
+  discordLargeImage: string;
+  discordSmallImage: string;
+  discordSmallImageText: string;
+  discordButton1Label: string;
+  discordButton1Url: string;
+  discordButton2Label: string;
+  discordButton2Url: string;
+  compat: Compat;
+}
+
+export interface BuildReport {
+  folder: string;
+  logTail: string;
 }
 
 export interface LicenseView {
@@ -65,4 +114,8 @@ export const api = {
   prepareHandoff: (id: number) => invoke<string>("prepare_handoff", { id }),
   openKeyFolder: (id: number) => invoke<void>("open_key_folder", { id }),
   tokenStatus: (id: number) => invoke<TokenStatus>("token_status", { id }),
+  getProfile: (id: number) => invoke<Profile>("get_profile", { id }),
+  saveProfile: (id: number, profile: Profile) => invoke<void>("save_profile", { id, profile }),
+  buildDll: (id: number) => invoke<BuildReport>("build_dll", { id }),
+  prepareUpdaterHandoff: (id: number) => invoke<string>("prepare_updater_handoff", { id }),
 };

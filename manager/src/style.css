@@ -112,4 +112,8 @@ fieldset.features legend { color: var(--muted); font-size: 12px; padding: 0 4px;
 .feature-tools button { padding: 3px 9px; font-size: 12px; }
 td.features { color: var(--muted); font-variant-numeric: tabular-nums; cursor: help; }
 
+.dialog:has(form.wide) { width: min(860px, calc(100vw - 32px)); max-height: calc(100vh - 40px); overflow: auto; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+#build-log { max-height: 220px; overflow: auto; color: #ffc9c7; }
+
 .hidden { display: none !important; }

@@ -7,7 +7,7 @@ use tauri::Manager;
 
 use crate::licenses::{self, License, LicenseFile, Status};
 use crate::settings::{self, Settings};
-use crate::{gitops, handoff, keys, worker};
+use crate::{build, gitops, handoff, keys, profile, worker};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -318,6 +318,58 @@ pub fn open_key_folder(app: tauri::AppHandle, id: u32) -> Result<(), String> {
     }
     open_explorer(format!("/select,{}", key.display()));
     Ok(())
+}
+
+fn licence(app: &tauri::AppHandle, id: u32) -> Result<(Settings, License), String> {
+    let s = current(app)?;
+    let l = find(&read_file(Path::new(&s.repo_dir))?, id)?;
+    Ok((s, l))
+}
+
+/// Saved buyer profile, or a new one filled from the current config.h.
+#[tauri::command]
+pub fn get_profile(app: tauri::AppHandle, id: u32) -> Result<profile::Profile, String> {
+    let (s, l) = licence(&app, id)?;
+    if let Some(p) = profile::load(Path::new(&s.keys_dir), &l.name, id) {
+        return Ok(p);
+    }
+    let config = Path::new(&s.client_dir).join("dll").join("src").join("config.h");
+    let text = std::fs::read_to_string(&config)
+        .map_err(|e| format!("não foi possível ler {}: {e}", config.display()))?;
+    Ok(profile::from_config(&text))
+}
+
+#[tauri::command]
+pub fn save_profile(app: tauri::AppHandle, id: u32, profile: profile::Profile) -> Result<(), String> {
+    let (s, l) = licence(&app, id)?;
+    profile::save(Path::new(&s.keys_dir), &l.name, id, &profile)
+}
+
+#[tauri::command(async)]
+pub fn build_dll(app: tauri::AppHandle, id: u32) -> Result<build::BuildReport, String> {
+    let (s, l) = licence(&app, id)?;
+    let keys_dir = PathBuf::from(&s.keys_dir);
+    let p = profile::load(&keys_dir, &l.name, id).ok_or("Salve o perfil do comprador antes de gerar a DLL.")?;
+    let report = build::build(&build::BuildInput {
+        client_dir: Path::new(&s.client_dir),
+        msbuild: Path::new(&s.msbuild_path),
+        keys_dir: &keys_dir,
+        worker_base: &s.worker_base,
+        name: &l.name,
+        id,
+        profile: &p,
+    })?;
+    open_explorer(report.folder.clone());
+    Ok(report)
+}
+
+#[tauri::command]
+pub fn prepare_updater_handoff(app: tauri::AppHandle, id: u32) -> Result<String, String> {
+    let (s, l) = licence(&app, id)?;
+    let out = build::prepare_updater_handoff(Path::new(&s.client_dir), Path::new(&s.keys_dir), &l.name, id)?;
+    let shown = out.display().to_string().replace('/', "\\");
+    open_explorer(shown.clone());
+    Ok(shown)
 }
 
 #[tauri::command(async)]

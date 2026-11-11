@@ -1,4 +1,4 @@
-import { api, FEATURES, LicenseView, OpResult, Settings, TokenStatus } from "./api";
+import { api, Compat, FEATURES, LicenseView, OpResult, Profile, Settings, TokenStatus } from "./api";
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 
@@ -128,6 +128,7 @@ function render(list: LicenseView[]) {
       <td class="row-actions">
         <button class="small" data-act="${l.status === "revogada" ? "reactivate" : "revoke"}">${l.status === "revogada" ? "Reativar" : "Revogar"}</button>
         <button class="small" data-act="edit">Editar</button>
+        <button class="small" data-act="build">Gerar DLL</button>
         <button class="small" data-act="config">Config</button>
         <button class="small" data-act="send" ${l.hasKey ? "" : 'disabled title="A chave desta licença não está neste PC."'}>Enviar</button>
         <button class="small danger" data-act="delete">Apagar</button>
@@ -223,6 +224,125 @@ function editDialog(l: LicenseView) {
   });
 }
 
+const PROFILE_FIELDS: [keyof Profile, string, string][] = [
+  ["serverHost", "IP ou domínio do servidor", "ex.: play.fulano.com"],
+  ["serverName", "Nome do servidor (login e Discord)", "ex.: Fulano OT"],
+  ["loginStoreDir", "Pasta onde o login salva a conta", "ex.: FulanoOT"],
+  ["websiteUrl", "Site", "https://..."],
+  ["discordUrl", "Discord (convite)", "https://discord.gg/..."],
+  ["forgotPasswordUrl", "Esqueci a senha", "https://..."],
+  ["createAccountUrl", "Criar conta", "https://..."],
+  ["storeImageUrl", "Imagens da Store", "https://.../images/store/"],
+  ["updaterUrl", "Auto updater (termina com /)", "https://.../updates/"],
+  ["discordAppId", "Discord RPC — App ID", "só números"],
+  ["discordLargeImage", "Discord RPC — imagem grande", "logo"],
+  ["discordSmallImage", "Discord RPC — imagem pequena", ""],
+  ["discordSmallImageText", "Discord RPC — texto da imagem pequena", ""],
+  ["discordButton1Label", "Botão 1 — texto", "Website"],
+  ["discordButton1Url", "Botão 1 — link", "https://..."],
+  ["discordButton2Label", "Botão 2 — texto", "Discord"],
+  ["discordButton2Url", "Botão 2 — link", "https://..."],
+];
+
+const COMPAT_FIELDS: [keyof Compat, string][] = [
+  ["mountSystem", "Sistema de montaria (protocolo)"],
+  ["healthU32", "Vida u32"],
+  ["manaU32", "Mana u32"],
+  ["effectsU16", "Efeitos mágicos u16"],
+  ["shootsU16", "Projéteis u16"],
+  ["outfitCountU16", "Quantidade de outfits u16"],
+  ["extended", "Dat/spr estendido"],
+  ["frameGroups", "Frame groups"],
+  ["datFrameGroups", "Dat tem frame groups"],
+  ["improvedAnimations", "Animações melhoradas"],
+  ["datImprovedAnimations", "Dat tem animações melhoradas"],
+  ["customPing", "Ping customizado"],
+  ["customClientOs", "Client OS customizado"],
+  ["multiClient", "Vários clientes abertos"],
+  ["hiresTimer", "Timer de alta resolução"],
+  ["alpha", "Transparência (spr RGBA)"],
+  ["manabar", "Barra de mana"],
+];
+
+function readProfile(form: HTMLFormElement, base: Profile): Profile {
+  const data = new FormData(form);
+  const p: Profile = { ...base, compat: { ...base.compat } };
+  for (const [key] of PROFILE_FIELDS) (p as any)[key] = String(data.get(key) ?? "").trim();
+  for (const [key] of COMPAT_FIELDS) (p.compat as any)[key] = form.querySelector<HTMLInputElement>(`input[name="c_${key}"]`)!.checked;
+  p.compat.outfitLimit = Math.max(1, Math.min(65535, Number(data.get("outfitLimit")) || 255));
+  return p;
+}
+
+async function buildDialog(l: LicenseView) {
+  let profile: Profile;
+  try {
+    profile = await api.getProfile(l.id);
+  } catch (e) {
+    showToast(errorText(e), "error");
+    return;
+  }
+  openModal(`
+    <h2>Gerar DLL — ${esc(l.name)} (#${l.id})</h2>
+    <form id="form-build" class="wide">
+      <div class="grid2">
+        ${PROFILE_FIELDS.map(([k, label, ph]) => `<label>${esc(label)}<input name="${k}" value="${esc(String(profile[k] ?? ""))}" placeholder="${esc(ph)}" /></label>`).join("")}
+      </div>
+      <fieldset class="features"><legend>Compatibilidade (tem que bater com o servidor e o dat/spr do comprador)</legend>
+        ${COMPAT_FIELDS.map(([k, label]) => `<label class="check"><input type="checkbox" name="c_${k}" ${profile.compat[k] ? "checked" : ""} /> ${esc(label)}</label>`).join("")}
+        <label class="check">Limite de outfits <input name="outfitLimit" type="number" min="1" max="65535" value="${profile.compat.outfitLimit}" style="width:80px" /></label>
+      </fieldset>
+      <p class="muted">Recursos da licença: ${esc(featureLabels(l.features))}. Eles ligam pela licença, não pela DLL.</p>
+      <pre id="build-log" class="hidden"></pre>
+      <div class="dialog-actions">
+        <button type="button" id="btn-updater" ${l.features.includes("auto_updater") ? "" : 'disabled title="Licença sem Auto Updater"'}>Enviar updater</button>
+        <button type="button" data-close>Fechar</button>
+        <button type="button" id="btn-save-profile">Salvar perfil</button>
+        <button type="submit" class="primary" id="btn-build">Salvar e gerar DLL</button>
+      </div>
+    </form>`);
+  const form = dialog.querySelector<HTMLFormElement>("#form-build")!;
+  const log = dialog.querySelector<HTMLPreElement>("#build-log")!;
+  const save = async () => {
+    profile = readProfile(form, profile);
+    await api.saveProfile(l.id, profile);
+  };
+  $("#btn-save-profile").addEventListener("click", async () => {
+    try {
+      await save();
+      showToast("Perfil salvo.");
+    } catch (e) {
+      showToast(errorText(e), "error");
+    }
+  });
+  $("#btn-updater").addEventListener("click", async () => {
+    try {
+      const folder = await api.prepareUpdaterHandoff(l.id);
+      showToast(`Pasta do updater pronta: ${folder}. Mande em particular.`);
+    } catch (e) {
+      showToast(errorText(e), "error");
+    }
+  });
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const button = $<HTMLButtonElement>("#btn-build");
+    button.disabled = true;
+    button.textContent = "Compilando... (1-3 min)";
+    log.classList.add("hidden");
+    try {
+      await save();
+      const report = await api.buildDll(l.id);
+      showToast(`DLL pronta: ${report.folder}`);
+      closeModal();
+    } catch (err) {
+      log.textContent = errorText(err);
+      log.classList.remove("hidden");
+      showToast("A geração da DLL falhou — veja o log na janela.", "error");
+      button.disabled = false;
+      button.textContent = "Salvar e gerar DLL";
+    }
+  });
+}
+
 function newLicenseDialog() {
   openModal(`
     <h2>Nova licença</h2>
@@ -262,6 +382,8 @@ async function settingsDialog() {
       <label>Pasta do repositório de licenças<input name="repoDir" value="${esc(s.repoDir)}" required /></label>
       <label>Pasta das chaves dos servidores<input name="keysDir" value="${esc(s.keysDir)}" required /></label>
       <label>Endereço do Worker<input name="workerBase" value="${esc(s.workerBase)}" required /></label>
+      <label>Pasta do cliente (AlurianOt-ClientOld)<input name="clientDir" value="${esc(s.clientDir)}" required /></label>
+      <label>MSBuild.exe<input name="msbuildPath" value="${esc(s.msbuildPath)}" required /></label>
       <p class="muted">A chave mestra nunca é usada por este app.</p>
       <div class="dialog-actions">
         <button type="button" data-close>Cancelar</button>
@@ -275,6 +397,8 @@ async function settingsDialog() {
       repoDir: String(data.get("repoDir")).trim(),
       keysDir: String(data.get("keysDir")).trim(),
       workerBase: String(data.get("workerBase")).trim(),
+      clientDir: String(data.get("clientDir")).trim(),
+      msbuildPath: String(data.get("msbuildPath")).trim(),
     };
     try {
       await api.saveSettings(next);
@@ -346,6 +470,9 @@ rows.addEventListener("click", async (e) => {
       break;
     case "edit":
       editDialog(l);
+      break;
+    case "build":
+      buildDialog(l);
       break;
     case "config":
       configDialog(l);
