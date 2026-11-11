@@ -92,3 +92,26 @@ e pergunta ao Worker até quando o token vale.
 
 Desenvolvimento: `cd manager && npm install && npm run tauri dev`;
 testes: `cargo test --manifest-path manager/src-tauri/Cargo.toml`.
+
+### Recursos por licença (venda à la carte)
+
+Cada licença tem uma lista `features` (Store, Market, Forge, Supply Stash,
+Task Hunt, Daily Reward, Hunting, ícones de criatura, emblemas de guild,
+Skills, colunas laterais, bolsa da Store, tela de login, Discord RPC,
+Montaria, Auto Updater). No app: **Editar** → marcar/desmarcar → Salvar.
+O Worker entrega um token v2 (`/v2/tokens/<id>.tok`) com os recursos
+assinados pela chave mestra; a DLL do comprador lê esse token ao abrir.
+Muda na **próxima vez que o cliente da pessoa abrir**. O caminho v1
+(`/tokens/<id>.tok`, usado pelo servidor) não mudou.
+
+### Gerar DLL do comprador
+
+**Gerar DLL** na linha da licença: preencha o perfil (IP, nome, links,
+Discord RPC, compatibilidade com o servidor/dat dele) → **Salvar e gerar
+DLL**. Sai em `C:\tmp\licenses\builds\<nome>-<id>\` (ddraw.dll, Tibia.exe,
+Tibia.pic, Tibia.otfi, LEIA-ME). Precisa do Visual Studio (MSBuild) e da
+pasta `AlurianOt-ClientOld` (Configurações). Cada comprador ganha uma chave
+de updater própria (`<nome>-<id>.updater.key`); **Enviar updater** monta a
+pasta com a chave e a ferramenta de publicar, para quem comprou o Auto
+Updater. O comprador precisa de servidor com a licença (TFS 1.x com
+`dll_license.cpp`).
