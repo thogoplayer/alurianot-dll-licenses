@@ -25,7 +25,7 @@ const TOKEN_SIZE_V2 = 161;
 const FEATURES = [
 	"store", "market", "forge", "supply_stash", "task_hunt", "daily_reward", "hunting",
 	"creature_icons", "guild_emblems", "skills", "side_columns", "store_inbox_purse",
-	"login_screen", "discord_rpc", "mount", "auto_updater",
+	"login_screen", "discord_rpc", "mount", "auto_updater", "guild",
 ];
 
 // null when the list has an unknown id.

@@ -17,6 +17,7 @@ const LICENSES = {
   licenses: [
     { id: 1, name: "a", serverPublicKey: SERVER_KEY, revoked: false, expires: null, note: "", features: ["store", "mount", "auto_updater"] },
     { id: 2, name: "b", serverPublicKey: SERVER_KEY, revoked: false, expires: null, note: "" },
+    { id: 3, name: "c", serverPublicKey: SERVER_KEY, revoked: false, expires: null, note: "", features: ["guild"] },
   ],
   retiredIds: [],
 };
@@ -64,4 +65,10 @@ test("v2 with no features field: mask 0", async () => {
 test("unknown id is 404 on both paths", async () => {
   assert.equal((await get("/tokens/9.tok")).status, 404);
   assert.equal((await get("/v2/tokens/9.tok")).status, 404);
+});
+
+test("v2 guild feature is bit 16", async () => {
+  const { status, bytes } = await get("/v2/tokens/3.tok");
+  assert.equal(status, 200);
+  assert.equal(bytes.readBigUInt64LE(89), 1n << 16n);
 });

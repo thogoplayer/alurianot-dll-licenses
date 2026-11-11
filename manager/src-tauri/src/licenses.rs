@@ -28,10 +28,10 @@ pub struct LicenseFile {
 }
 
 /// Sellable DLL features. Append-only: the index is the bit in the v2 token.
-pub const FEATURES: [&str; 16] = [
+pub const FEATURES: [&str; 17] = [
     "store", "market", "forge", "supply_stash", "task_hunt", "daily_reward", "hunting",
     "creature_icons", "guild_emblems", "skills", "side_columns", "store_inbox_purse",
-    "login_screen", "discord_rpc", "mount", "auto_updater",
+    "login_screen", "discord_rpc", "mount", "auto_updater", "guild",
 ];
 
 /// Bitmask for the v2 lease token (bit = index in FEATURES).
@@ -207,6 +207,7 @@ mod tests {
     #[test]
     fn feature_mask_bits() {
         assert_eq!(feature_mask(&["store".into(), "auto_updater".into()]).unwrap(), 1 | (1 << 15));
+        assert_eq!(feature_mask(&["guild".into()]).unwrap(), 1 << 16);
         assert_eq!(feature_mask(&[]).unwrap(), 0);
         assert!(feature_mask(&["nope".into()]).unwrap_err().contains("nope"));
     }

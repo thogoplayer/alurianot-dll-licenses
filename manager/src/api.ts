@@ -95,6 +95,7 @@ export const FEATURES: { id: string; label: string }[] = [
   { id: "discord_rpc", label: "Discord RPC" },
   { id: "mount", label: "Montaria (brinde)" },
   { id: "auto_updater", label: "Auto Updater" },
+  { id: "guild", label: "Guild (wars, Anti-Entrosa)" },
 ];
 
 export const api = {
