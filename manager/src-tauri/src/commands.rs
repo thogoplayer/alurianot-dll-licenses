@@ -56,6 +56,7 @@ pub fn apply_create(
         revoked: false,
         expires,
         note: note.trim().to_string(),
+        features: vec![],
     });
     Ok(())
 }
@@ -290,6 +291,7 @@ mod tests {
                 revoked: false,
                 expires: None,
                 note: String::new(),
+                features: vec![],
             }],
             retired_ids: vec![],
         }

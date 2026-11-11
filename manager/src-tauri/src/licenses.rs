@@ -13,6 +13,9 @@ pub struct License {
     pub expires: Option<String>,
     #[serde(default)]
     pub note: String,
+    /// Sellable features (FEATURES ids). Missing or empty = none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub features: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -22,6 +25,26 @@ pub struct LicenseFile {
     pub licenses: Vec<License>,
     #[serde(default)]
     pub retired_ids: Vec<u32>,
+}
+
+/// Sellable DLL features. Append-only: the index is the bit in the v2 token.
+pub const FEATURES: [&str; 16] = [
+    "store", "market", "forge", "supply_stash", "task_hunt", "daily_reward", "hunting",
+    "creature_icons", "guild_emblems", "skills", "side_columns", "store_inbox_purse",
+    "login_screen", "discord_rpc", "mount", "auto_updater",
+];
+
+/// Bitmask for the v2 lease token (bit = index in FEATURES).
+pub fn feature_mask(ids: &[String]) -> Result<u64, String> {
+    let mut mask = 0u64;
+    for id in ids {
+        let bit = FEATURES
+            .iter()
+            .position(|f| f == id)
+            .ok_or_else(|| format!("recurso desconhecido: {id}"))?;
+        mask |= 1u64 << bit;
+    }
+    Ok(mask)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,6 +91,7 @@ pub fn parse(text: &str) -> Result<LicenseFile, String> {
                 "licenses.json inválido: {who}: serverPublicKey precisa de 128 dígitos hex"
             ));
         }
+        feature_mask(&l.features).map_err(|e| format!("licenses.json inválido: {who}: {e}"))?;
         if let Some(e) = &l.expires {
             if parse_date(e).is_none() {
                 return Err(format!("licenses.json inválido: {who}: data {e} (use AAAA-MM-DD)"));
@@ -139,6 +163,7 @@ mod tests {
             revoked: false,
             expires: None,
             note: String::new(),
+            features: vec![],
         }
     }
 
@@ -177,6 +202,29 @@ mod tests {
         assert!(parse(&to_json_unchecked(&f)).is_err());
         f.licenses[1].expires = Some("2026-12-01".into());
         assert!(parse(&to_json_unchecked(&f)).is_ok());
+    }
+
+    #[test]
+    fn feature_mask_bits() {
+        assert_eq!(feature_mask(&["store".into(), "auto_updater".into()]).unwrap(), 1 | (1 << 15));
+        assert_eq!(feature_mask(&[]).unwrap(), 0);
+        assert!(feature_mask(&["nope".into()]).unwrap_err().contains("nope"));
+    }
+
+    #[test]
+    fn parse_validates_features_and_keeps_order() {
+        let with = sample(KEY).replace(
+            "\"note\": \"Servidor oficial\"",
+            "\"note\": \"Servidor oficial\",
+      \"features\": [
+        \"market\",
+        \"mount\"
+      ]",
+        );
+        let file = parse(&with).unwrap();
+        assert_eq!(file.licenses[0].features, vec!["market".to_string(), "mount".to_string()]);
+        assert_eq!(to_json(&file), with);
+        assert!(parse(&with.replace("\"mount\"", "\"xyz\"")).unwrap_err().contains("xyz"));
     }
 
     #[test]

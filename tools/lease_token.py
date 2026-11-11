@@ -34,6 +34,11 @@ MAGIC = b"ALLT"
 VERSION = 1
 BODY_SIZE = 89
 TOKEN_SIZE = 153
+# v2 (Worker path /v2/tokens/<id>.tok): + u64 feature bitmask at 89..97,
+# signature over LEASE_DOMAIN_TAG || bytes[0:97]; 161 bytes.
+VERSION_V2 = 2
+BODY_SIZE_V2 = 97
+TOKEN_SIZE_V2 = 161
 
 
 def public_key_raw(public_key) -> bytes:
@@ -67,19 +72,38 @@ def make_token(master_key, license_id: int, issued_at: int, expires_at: int,
     return token
 
 
+def make_token_v2(master_key, license_id: int, issued_at: int, expires_at: int,
+                  server_public_key: bytes, features: int) -> bytes:
+    if len(server_public_key) != 64:
+        raise ValueError("server public key must be 64 bytes")
+    body = (MAGIC + struct.pack("<BIQQ", VERSION_V2, license_id, issued_at, expires_at)
+            + server_public_key + struct.pack("<Q", features))
+    assert len(body) == BODY_SIZE_V2
+    der = master_key.sign(LEASE_DOMAIN_TAG + body, ec.ECDSA(hashes.SHA256()))
+    r, s = decode_dss_signature(der)
+    return body + r.to_bytes(32, "big") + s.to_bytes(32, "big")
+
+
 def parse_token(token: bytes) -> dict:
-    if len(token) != TOKEN_SIZE or token[:4] != MAGIC:
+    if len(token) < 5 or token[:4] != MAGIC:
         raise ValueError("not a lease token")
-    version, license_id, issued_at, expires_at = struct.unpack_from("<BIQQ", token, 4)
-    if version != VERSION:
-        raise ValueError("unsupported token version %d" % version)
+    version = token[4]
+    if version == VERSION and len(token) == TOKEN_SIZE:
+        body_size, features = BODY_SIZE, 0
+    elif version == VERSION_V2 and len(token) == TOKEN_SIZE_V2:
+        body_size = BODY_SIZE_V2
+        (features,) = struct.unpack_from("<Q", token, 89)
+    else:
+        raise ValueError("unsupported token version %d / size %d" % (version, len(token)))
+    _, license_id, issued_at, expires_at = struct.unpack_from("<BIQQ", token, 4)
     return {
         "licenseId": license_id,
         "issuedAt": issued_at,
         "expiresAt": expires_at,
         "serverPublicKey": token[25:89].hex(),
-        "signature": token[89:153],
-        "body": token[:BODY_SIZE],
+        "features": features,
+        "signature": token[body_size:],
+        "body": token[:body_size],
     }
 
 

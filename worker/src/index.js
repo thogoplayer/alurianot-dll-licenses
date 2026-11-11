@@ -16,6 +16,28 @@ const LICENSES_FALLBACK_KEY = "https://alurianot-dll-licenses.internal/licenses.
 const LEASE_TAG = new TextEncoder().encode("AlurianOT-DLL-Lease-v1");
 const BODY_SIZE = 89;
 const TOKEN_SIZE = 153;
+// v2 (GET /v2/tokens/<id>.tok) appends a u64 feature bitmask to the body:
+// 97-byte body + 64-byte signature = 161 bytes. v1 stays byte-identical.
+const BODY_SIZE_V2 = 97;
+const TOKEN_SIZE_V2 = 161;
+// Append-only; index = bit. Must match manager/src-tauri/src/licenses.rs
+// FEATURES and the DLL's Feature enum (dll/src/features.h).
+const FEATURES = [
+	"store", "market", "forge", "supply_stash", "task_hunt", "daily_reward", "hunting",
+	"creature_icons", "guild_emblems", "skills", "side_columns", "store_inbox_purse",
+	"login_screen", "discord_rpc", "mount", "auto_updater",
+];
+
+// null when the list has an unknown id.
+function featureMask(list) {
+	let mask = 0n;
+	for (const id of list || []) {
+		const bit = FEATURES.indexOf(id);
+		if (bit < 0) return null;
+		mask |= 1n << BigInt(bit);
+	}
+	return mask;
+}
 
 let cachedKey = null;
 
@@ -62,24 +84,28 @@ function writeU64(view, offset, value) {
 	view.setUint32(offset + 4, Math.floor(value / 0x100000000), true);
 }
 
-async function makeToken(env, licenseId, issuedAt, expiresAt, serverKey) {
-	const token = new Uint8Array(TOKEN_SIZE);
+// features === null -> v1 token; otherwise v2 carrying that BigInt mask.
+async function makeToken(env, licenseId, issuedAt, expiresAt, serverKey, features = null) {
+	const v2 = features !== null;
+	const bodySize = v2 ? BODY_SIZE_V2 : BODY_SIZE;
+	const token = new Uint8Array(v2 ? TOKEN_SIZE_V2 : TOKEN_SIZE);
 	const view = new DataView(token.buffer);
 	token.set([0x41, 0x4c, 0x4c, 0x54], 0); // "ALLT"
-	token[4] = 1;
+	token[4] = v2 ? 2 : 1;
 	view.setUint32(5, licenseId, true);
 	writeU64(view, 9, issuedAt);
 	writeU64(view, 17, expiresAt);
 	token.set(serverKey, 25);
+	if (v2) view.setBigUint64(89, features, true);
 
-	const message = new Uint8Array(LEASE_TAG.length + BODY_SIZE);
+	const message = new Uint8Array(LEASE_TAG.length + bodySize);
 	message.set(LEASE_TAG, 0);
-	message.set(token.subarray(0, BODY_SIZE), LEASE_TAG.length);
+	message.set(token.subarray(0, bodySize), LEASE_TAG.length);
 	// WebCrypto ECDSA returns raw r || s (IEEE P1363), the format the DLL wants.
 	const sig = new Uint8Array(await crypto.subtle.sign(
 		{ name: "ECDSA", hash: "SHA-256" }, await masterKey(env), message));
 	if (sig.length !== 64) throw new Error("unexpected signature size");
-	token.set(sig, BODY_SIZE);
+	token.set(sig, bodySize);
 	return token;
 }
 
@@ -96,9 +122,10 @@ export default {
 		if (request.method !== "GET" && request.method !== "HEAD") return text("method not allowed\n", 405);
 		if (url.pathname === "/" || url.pathname === "/health") return text("ok\n", 200);
 
-		const m = url.pathname.match(/^\/tokens\/(\d{1,10})\.tok$/);
+		const m = url.pathname.match(/^\/(v2\/)?tokens\/(\d{1,10})\.tok$/);
 		if (!m) return text("not found\n", 404);
-		const id = Number(m[1]);
+		const v2 = Boolean(m[1]);
+		const id = Number(m[2]);
 
 		let data;
 		try {
@@ -123,7 +150,12 @@ export default {
 		}
 
 		try {
-			const token = await makeToken(env, id, now, expiresAt, serverKey);
+			let features = null;
+			if (v2) {
+				features = featureMask(lic.features);
+				if (features === null) return text("bad licence entry\n", 500);
+			}
+			const token = await makeToken(env, id, now, expiresAt, serverKey, features);
 			let bin = "";
 			for (const b of token) bin += String.fromCharCode(b);
 			return text(btoa(bin) + "\n", 200);
